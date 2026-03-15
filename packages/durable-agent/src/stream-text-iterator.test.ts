@@ -9,9 +9,10 @@
 import type {
   LanguageModelV3Prompt,
   LanguageModelV3ToolCall,
-  LanguageModelV3ToolResult,
+  LanguageModelV3ToolResultPart,
 } from '@ai-sdk/provider';
 import type { StepResult, ToolSet, UIMessageChunk } from 'ai';
+import type { StreamTextIteratorYieldValue } from './stream-text-iterator.js';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // Mock doStreamStep
@@ -40,6 +41,12 @@ function createMockStepResult(
   overrides: Partial<StepResult<ToolSet>> = {},
 ): StepResult<ToolSet> {
   return {
+    callId: 'test-call-id',
+    stepNumber: 0,
+    model: { provider: 'test', modelId: 'test' },
+    functionId: undefined,
+    metadata: undefined,
+    experimental_context: undefined,
     content: [],
     text: '',
     reasoning: [],
@@ -53,7 +60,18 @@ function createMockStepResult(
     staticToolResults: [],
     dynamicToolResults: [],
     finishReason: 'stop',
-    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    rawFinishReason: undefined,
+    usage: {
+      inputTokens: 0,
+      inputTokenDetails: {
+        noCacheTokens: undefined,
+        cacheReadTokens: undefined,
+        cacheWriteTokens: undefined,
+      },
+      outputTokens: 0,
+      outputTokenDetails: { textTokens: undefined, reasoningTokens: undefined },
+      totalTokens: 0,
+    },
     warnings: [],
     request: { body: '' },
     response: {
@@ -62,7 +80,7 @@ function createMockStepResult(
       modelId: 'test',
       messages: [],
     },
-    providerMetadata: {},
+    providerMetadata: undefined,
     ...overrides,
   };
 }
@@ -98,16 +116,46 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls: [toolCallWithMetadata],
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           // Capture the prompt on the second call to verify providerOptions
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -119,7 +167,7 @@ describe('streamTextIterator', () => {
             description: 'A test tool',
             execute: async () => ({ result: 'success' }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
@@ -127,10 +175,11 @@ describe('streamTextIterator', () => {
       // First iteration - get tool calls
       const firstResult = await iterator.next();
       expect(firstResult.done).toBe(false);
-      expect(firstResult.value.toolCalls).toHaveLength(1);
+      const firstValue = firstResult.value as StreamTextIteratorYieldValue;
+      expect(firstValue.toolCalls).toHaveLength(1);
 
       // Provide tool results and continue
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',
@@ -181,15 +230,45 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls: [toolCallWithoutMetadata],
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -201,7 +280,7 @@ describe('streamTextIterator', () => {
             description: 'A test tool',
             execute: async () => ({ result: 'success' }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
@@ -209,7 +288,7 @@ describe('streamTextIterator', () => {
       const firstResult = await iterator.next();
       expect(firstResult.done).toBe(false);
 
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',
@@ -262,15 +341,45 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls,
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -286,16 +395,17 @@ describe('streamTextIterator', () => {
             description: 'News tool',
             execute: async () => ({ headlines: [] }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
 
       const firstResult = await iterator.next();
       expect(firstResult.done).toBe(false);
-      expect(firstResult.value.toolCalls).toHaveLength(2);
+      const firstValue = firstResult.value as StreamTextIteratorYieldValue;
+      expect(firstValue.toolCalls).toHaveLength(2);
 
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',
@@ -366,15 +476,45 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls,
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -390,14 +530,14 @@ describe('streamTextIterator', () => {
             description: 'Tool without metadata',
             execute: async () => ({ ok: true }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
 
       await iterator.next();
 
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',
@@ -457,15 +597,45 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls: [toolCallWithOpenAIMetadata],
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -477,14 +647,14 @@ describe('streamTextIterator', () => {
             description: 'A test tool',
             execute: async () => ({ result: 'success' }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
 
       await iterator.next();
 
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',
@@ -531,15 +701,45 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls: [toolCallWithMixedOpenAIMetadata],
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -551,14 +751,14 @@ describe('streamTextIterator', () => {
             description: 'A test tool',
             execute: async () => ({ result: 'success' }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
 
       await iterator.next();
 
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',
@@ -611,15 +811,45 @@ describe('streamTextIterator', () => {
         .mockResolvedValueOnce({
           toolCalls: [toolCallWithMixedProviders],
           finish: {
+            type: 'finish' as const,
             finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+            usage: {
+              inputTokens: {
+                total: 0,
+                noCache: undefined,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 0, text: undefined, reasoning: undefined },
+            },
           },
+          uiChunks: undefined,
+          providerExecutedToolResults: new Map(),
           step: createMockStepResult({ finishReason: 'tool-calls' }),
         })
-        .mockImplementationOnce(async prompt => {
+        .mockImplementationOnce(async (prompt: any) => {
           capturedPrompt = prompt;
           return {
             toolCalls: [],
-            finish: { finishReason: { unified: 'stop' as const, raw: 'stop' } },
+            finish: {
+              type: 'finish' as const,
+              finishReason: { unified: 'stop' as const, raw: 'stop' },
+              usage: {
+                inputTokens: {
+                  total: 0,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: 0,
+                  text: undefined,
+                  reasoning: undefined,
+                },
+              },
+            },
+            uiChunks: undefined,
+            providerExecutedToolResults: new Map(),
             step: createMockStepResult({ finishReason: 'stop' }),
           };
         });
@@ -631,14 +861,14 @@ describe('streamTextIterator', () => {
             description: 'A test tool',
             execute: async () => ({ result: 'success' }),
           },
-        } as ToolSet,
+        } as unknown as ToolSet,
         writable: mockWritable,
         model: mockModel as any,
       });
 
       await iterator.next();
 
-      const toolResults: LanguageModelV3ToolResult[] = [
+      const toolResults: LanguageModelV3ToolResultPart[] = [
         {
           type: 'tool-result',
           toolCallId: 'call-1',

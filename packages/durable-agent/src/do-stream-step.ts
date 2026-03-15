@@ -139,7 +139,6 @@ export async function doStreamStep(
     ProviderExecutedToolResult
   >();
   const chunks: LanguageModelV3StreamPart[] = [];
-  const includeRawChunks = options?.includeRawChunks ?? false;
   const collectUIChunks = options?.collectUIChunks ?? false;
   const uiChunks: UIMessageChunk[] = [];
 
@@ -194,7 +193,6 @@ export async function doStreamStep(
       createProviderStreamToUIChunkTransform({
         sendStart: options?.sendStart,
         messageId: options?.sendStart ? generateId() : undefined,
-        includeRawChunks,
       }),
     )
     .pipeThrough(
@@ -312,6 +310,7 @@ function chunksToStep(
   const rawFinishReason = finish?.finishReason?.raw;
 
   const stepResult: StepResult<any> = {
+    callId: generateId(),
     stepNumber: 0, // Will be overridden by the caller
     model: {
       provider: responseMetadata?.modelId?.split(':')[0] ?? 'unknown',
