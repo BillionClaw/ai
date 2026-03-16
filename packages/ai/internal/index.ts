@@ -3,6 +3,7 @@ export { convertAsyncIteratorToReadableStream } from '@ai-sdk/provider-utils';
 
 // internal
 export { convertToLanguageModelPrompt } from '../src/prompt/convert-to-language-model-prompt';
+export { toResponseMessages } from '../src/generate-text/to-response-messages';
 export { prepareToolsAndToolChoice } from '../src/prompt/prepare-tools-and-tool-choice';
 export { standardizePrompt } from '../src/prompt/standardize-prompt';
 export { prepareCallSettings } from '../src/prompt/prepare-call-settings';
