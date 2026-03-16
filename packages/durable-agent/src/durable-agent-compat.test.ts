@@ -363,6 +363,7 @@ describe('DurableAgent (ToolLoopAgent compat)', () => {
           {
             "content": [
               {
+                "providerOptions": undefined,
                 "text": "Hello, world!",
                 "type": "text",
               },
@@ -415,6 +416,7 @@ describe('DurableAgent (ToolLoopAgent compat)', () => {
           {
             "content": [
               {
+                "providerOptions": undefined,
                 "text": "Hello, world!",
                 "type": "text",
               },
@@ -483,6 +485,7 @@ describe('DurableAgent (ToolLoopAgent compat)', () => {
           {
             "content": [
               {
+                "providerOptions": undefined,
                 "text": "Hello, world!",
                 "type": "text",
               },

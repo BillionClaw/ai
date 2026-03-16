@@ -12,6 +12,7 @@ import type {
   ToolSet,
   UIMessageChunk,
 } from 'ai';
+import { toResponseMessages } from 'ai/internal';
 import {
   doStreamStep,
   type ModelStopCondition,
@@ -296,28 +297,27 @@ export async function* streamTextIterator({
       if (finishReason === 'tool-calls') {
         lastStepWasToolCalls = true;
 
-        // Add assistant message with tool calls to the conversation
-        // Note: providerMetadata from the tool call is mapped to providerOptions
-        // in the prompt format, following the AI SDK convention. This is critical
-        // for providers like Gemini that require thoughtSignature to be preserved
-        // across multi-turn tool calls. Some fields are sanitized before mapping.
-        conversationPrompt.push({
-          role: 'assistant',
-          content: toolCalls.map(toolCall => {
-            const sanitizedMetadata = sanitizeProviderMetadataForToolCall(
-              toolCall.providerMetadata,
-            );
-            return {
-              type: 'tool-call',
-              toolCallId: toolCall.toolCallId,
-              toolName: toolCall.toolName,
-              input: JSON.parse(toolCall.input),
-              ...(sanitizedMetadata != null
-                ? { providerOptions: sanitizedMetadata }
-                : {}),
-            };
-          }) as typeof toolCalls,
+        // Add assistant message with tool calls (and any text/reasoning) to the conversation.
+        // Uses toResponseMessages to convert step content to prompt messages, then sanitizes
+        // provider metadata on tool-call parts (e.g., stripping OpenAI's itemId which
+        // references reasoning items we don't preserve across steps).
+        const assistantMessages = await toResponseMessages({
+          content: step.content,
+          tools: undefined,
         });
+        for (const msg of assistantMessages) {
+          if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            // Sanitize provider metadata on tool-call parts
+            for (const part of msg.content) {
+              if (part.type === 'tool-call' && part.providerOptions != null) {
+                part.providerOptions = sanitizeProviderMetadataForToolCall(
+                  part.providerOptions,
+                );
+              }
+            }
+          }
+          conversationPrompt.push(msg as (typeof conversationPrompt)[number]);
+        }
 
         // Yield the tool calls along with the current conversation messages
         // This allows executeTool to pass the conversation context to tool execute functions
@@ -360,16 +360,14 @@ export async function* streamTextIterator({
           }
         }
       } else if (finishReason === 'stop') {
-        // Add assistant message with text content to the conversation
-        const textContent = step.content.filter(
-          item => item.type === 'text',
-        ) as Array<{ type: 'text'; text: string }>;
-
-        if (textContent.length > 0) {
-          conversationPrompt.push({
-            role: 'assistant',
-            content: textContent,
-          });
+        // Add assistant message with all content (text, reasoning, files) to the conversation.
+        // Uses toResponseMessages which correctly handles all content types and skips sources.
+        const responseMessages = await toResponseMessages({
+          content: step.content,
+          tools: undefined,
+        });
+        for (const msg of responseMessages) {
+          conversationPrompt.push(msg as (typeof conversationPrompt)[number]);
         }
 
         done = true;
